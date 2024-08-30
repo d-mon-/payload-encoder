@@ -6,8 +6,13 @@ const endian = endianness();
 const float64Array = new Float64Array(1);
 const uInt8Float64Array = new Uint8Array(float64Array.buffer);
 
-const max32UInt = Math.pow(2, 32) - 1;
+const bigint64Array = new BigUint64Array(1);
+const uInt8BigInt64Array = new Uint8Array(bigint64Array.buffer);
+
+const max32UInt = 2 ** 32 - 1;
 const min32UInt = -max32UInt;
+const max64UInt = 2n ** 64n - 1n;
+const min64UInt = -max64UInt;
 
 export class Encoder {
   constructor(private options?: { allowInfinity?: boolean }) {}
@@ -32,7 +37,37 @@ export class Encoder {
     return Buffer.from([code, ...intArray]);
   }
 
-  private _encodeBigInt(value: bigint) {
+  private _encodeBigInt64(value: bigint) {
+    // there ares no negative zero in bigint
+    const isPositive = value >= 0n;
+    const codeRangeByte = isPositive
+      ? codes.POSITIVE_BIGINT
+      : codes.NEGATIVE_BIGINT;
+    const absValue = isPositive ? value : value * -1n;
+
+    bigint64Array[0] = absValue;
+    let bigIntArr =
+      endian === "BE" ? uInt8BigInt64Array : [...uInt8BigInt64Array].reverse();
+    const nonZeroIdx = bigIntArr.findIndex((v) => v !== 0);
+
+    let code: number;
+    if (nonZeroIdx === -1) {
+      code = codeRangeByte[0]; // 0 bit
+      bigIntArr = [];
+    } else if (nonZeroIdx < 4) {
+      code = codeRangeByte[8]; // 8 bytes
+    } else if (nonZeroIdx < 7) {
+      code = codeRangeByte[4];
+      bigIntArr = bigIntArr.slice(4, 8); // 4 bytes
+    } else {
+      code = codeRangeByte[1];
+      bigIntArr = bigIntArr.slice(7, 8); // 1 byte
+    }
+
+    return Buffer.from([code, ...bigIntArr]);
+  }
+
+  private _encodeBigIntN(value: bigint) {
     const code = value > 0n ? codes.POSITIVE_BIGINT.N : codes.NEGATIVE_BIGINT.N;
     value = value > 0 ? value : value * -1n; // = Math.abs
     const bufferBigInt = Buffer.from(value.toString(16)); // bigint -> hex
@@ -99,12 +134,16 @@ export class Encoder {
     if (value === null) {
       return Buffer.from([codes.NULL]);
     }
-    if (typeof value === "number" && !isNaN(value)) {
-      return this._encodeNumber(value);
-    }
     if (typeof value === "bigint") {
       // could use bigint-buffer?
-      return this._encodeBigInt(value);
+      if (min64UInt <= value && value <= max64UInt) {
+        return this._encodeBigInt64(value);
+      } else {
+        return this._encodeBigIntN(value);
+      }
+    }
+    if (typeof value === "number" && !isNaN(value)) {
+      return this._encodeNumber(value);
     }
     if (typeof value === "string") {
       return this._encodeString(value);

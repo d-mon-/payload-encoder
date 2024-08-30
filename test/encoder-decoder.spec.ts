@@ -98,8 +98,27 @@ describe("Encoder/Decoder", () => {
     expect(decoder.decode(encoder.encode(null))).toEqual(null);
   });
 
-  test("bigInt", () => {
-    expect(decoder.decode(encoder.encode(12345n))).toEqual(12345n);
-    expect(decoder.decode(encoder.encode(-12345n))).toEqual(-12345n);
+  test("bigint", () => {
+    const bigIntTestCases = [
+      0n,
+      1n,
+      255n,
+      256n,
+      String(2n ** 32n - 1n),
+      String(2n ** 32n),
+      String(2n ** 64n - 1n),
+      String(2n ** 64n),
+      -1n,
+      -255n,
+      -256n,
+      String(-(2n ** 32n - 1n)),
+      String(-(2n ** 32n)),
+      String(-(2n ** 64n - 1n)),
+      String(-(2n ** 64n)),
+    ];
+
+    bigIntTestCases.forEach((input) => {
+      expect(decoder.decode(encoder.encode(input))).toEqual(input);
+    });
   });
 });

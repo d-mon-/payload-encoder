@@ -6,12 +6,11 @@ const endian = endianness();
 const float64Array = new Float64Array(1);
 const uInt8Float64Array = new Uint8Array(float64Array.buffer);
 
-const pows_caching = [
-  Math.pow(2, 0),
-  Math.pow(2, 8),
-  Math.pow(2, 16),
-  Math.pow(2, 24),
-];
+const int_pows_caching = Array.from(Array(4), (_, i) => Math.pow(2, i * 8));
+const bigint_pows_caching = Array.from(
+  Array(7),
+  (_, i) => 2n ** (BigInt(i) * 8n)
+);
 
 export class Decoder {
   constructor(private options?: { allowInfinity?: boolean }) {}
@@ -34,7 +33,7 @@ export class Decoder {
     for (let i = 0; i < bufferSize; i++) {
       const output = buffer[offset + i];
       if (typeof output === "undefined") throw new Error("Unexpected error");
-      result += output * pows_caching[bufferSize - 1 - i]!;
+      result += output * int_pows_caching[bufferSize - 1 - i]!;
     }
     return { data: sign * result, offset: offset + bufferSize };
   }
@@ -62,6 +61,39 @@ export class Decoder {
   }
 
   private _decodeBigInt(code: number, buffer: Buffer, offset = 1) {
+    const codeIsPositiveInt =
+      codes.POSITIVE_BIGINT[0] <= code && code <= codes.POSITIVE_BIGINT[8];
+
+    const sign = codeIsPositiveInt ? 1n : -1n;
+    let bufferSize: number;
+
+    switch (code) {
+      case codes.NEGATIVE_BIGINT[0]:
+      case codes.POSITIVE_BIGINT[0]:
+        bufferSize = 0;
+        break;
+      case codes.NEGATIVE_BIGINT[1]:
+      case codes.POSITIVE_BIGINT[1]:
+        bufferSize = 1;
+        break;
+      case codes.NEGATIVE_BIGINT[4]:
+      case codes.POSITIVE_BIGINT[4]:
+        bufferSize = 4;
+        break;
+      default:
+        bufferSize = 8;
+    }
+
+    let result = 0n;
+    for (let i = 0; i < bufferSize; i++) {
+      const output = buffer[offset + i];
+      if (typeof output === "undefined") throw new Error("Unexpected error");
+      result += BigInt(output) * bigint_pows_caching[bufferSize - 1 - i]!;
+    }
+    return { data: sign * result, offset: offset + bufferSize };
+  }
+
+  private _decodeBigIntN(code: number, buffer: Buffer, offset = 1) {
     const bigIntLengthCode = buffer.at(offset);
     if (typeof bigIntLengthCode === "undefined")
       throw new Error("Unexpected error");
@@ -116,8 +148,15 @@ export class Decoder {
     if (code === codes.BOOLEAN.FALSE) return false;
     if (code === codes.BOOLEAN.TRUE) return true;
 
-    if (code === codes.POSITIVE_BIGINT.N || code === codes.NEGATIVE_BIGINT.N) {
-      return this._decodeBigInt(code, buffer);
+    if (codes.POSITIVE_BIGINT[0] <= code && code <= codes.NEGATIVE_BIGINT.N) {
+      if (
+        code === codes.POSITIVE_BIGINT.N ||
+        code === codes.NEGATIVE_BIGINT.N
+      ) {
+        return this._decodeBigIntN(code, buffer);
+      } else {
+        return this._decodeBigInt(code, buffer).data;
+      }
     }
 
     throw new Error(`Couldn't decode value with code ${code}`);

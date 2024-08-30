@@ -16,18 +16,18 @@ export const codes = {
     4: 19, // 4 byte
   },
   POSITIVE_BIGINT: {
-    N: 20,
-    64: 21,
-    32: 22,
-    16: 23,
-    8: 24,
+    0: 20, // positive zero (0 byte)
+    1: 21, // 1 byte
+    4: 22, // 4 byte
+    8: 23, // 8 byte
+    N: 24, // N byte
   },
   NEGATIVE_BIGINT: {
-    N: 25,
-    64: 26,
-    32: 27,
-    16: 28,
-    8: 29,
+    0: 25, // negative zero (0 byte) -- doesn't exist, but we keep it to stay consistent
+    1: 26, // 1 byte
+    4: 27, // 4 byte
+    8: 28, // 8 byte
+    N: 29, // N byte
   },
   FLOAT: 30,
   NUMBER_POSITIVE_INFINITY: 40,

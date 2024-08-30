@@ -103,22 +103,90 @@ describe("Encoder", () => {
     );
   });
 
-  test("encode bigint", () => {
+  test("encode bigint > 64bit", () => {
     const positiveBigintCode = String.fromCharCode(codes.POSITIVE_BIGINT.N);
     const negativeBigintCode = String.fromCharCode(codes.NEGATIVE_BIGINT.N);
     const integerCode = String.fromCharCode(codes.POSITIVE_INT[1]);
-    const bigintBufferSize = String.fromCharCode(16);
+    const bigintBufferSize = String.fromCharCode(17);
 
-    expect(encoder.encode(1234567890123456789n)).toStrictEqual(
+    expect(encoder.encode(2n ** 64n)).toStrictEqual(
       Buffer.from(
-        `${positiveBigintCode}${integerCode}${bigintBufferSize}112210f47de98115`
+        `${positiveBigintCode}${integerCode}${bigintBufferSize}10000000000000000`
       )
     );
 
-    expect(encoder.encode(-1234567890123456789n)).toStrictEqual(
+    expect(encoder.encode(-(2n ** 64n))).toStrictEqual(
       Buffer.from(
-        `${negativeBigintCode}${integerCode}${bigintBufferSize}112210f47de98115`
+        `${negativeBigintCode}${integerCode}${bigintBufferSize}10000000000000000`
       )
     );
+  });
+
+  test("encode positive bigint <= 64bit", () => {
+    const intTestCases = {
+      0: [codes.POSITIVE_BIGINT[0]],
+      1: [codes.POSITIVE_BIGINT[1], 1],
+      255: [codes.POSITIVE_BIGINT[1], 255],
+      256: [codes.POSITIVE_BIGINT[4], 0, 0, 1, 0],
+      [String(2n ** 32n - 1n)]: [codes.POSITIVE_BIGINT[4], 255, 255, 255, 255],
+      [String(2n ** 32n)]: [codes.POSITIVE_BIGINT[8], 0, 0, 0, 1, 0, 0, 0, 0],
+      [String(2n ** 64n - 1n)]: [
+        codes.POSITIVE_BIGINT[8],
+        255,
+        255,
+        255,
+        255,
+        255,
+        255,
+        255,
+        255,
+      ], // max bigint
+    };
+
+    Object.entries(intTestCases).forEach(([input, output]) => {
+      expect(encoder.encode(BigInt(input))).toStrictEqual(Buffer.from(output));
+    });
+  });
+
+  test("encode negative bigint <= 64bit", () => {
+    const intTestCases = {
+      "-0": [codes.POSITIVE_BIGINT[0]], // only exception
+      "-1": [codes.NEGATIVE_BIGINT[1], 1],
+      "-255": [codes.NEGATIVE_BIGINT[1], 255],
+      "-256": [codes.NEGATIVE_BIGINT[4], 0, 0, 1, 0],
+      [String(-(2n ** 32n - 1n))]: [
+        codes.NEGATIVE_BIGINT[4],
+        255,
+        255,
+        255,
+        255,
+      ],
+      [String(-(2n ** 32n))]: [
+        codes.NEGATIVE_BIGINT[8],
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+      ],
+      [String(-(2n ** 64n - 1n))]: [
+        codes.NEGATIVE_BIGINT[8],
+        255,
+        255,
+        255,
+        255,
+        255,
+        255,
+        255,
+        255,
+      ], // max bigint
+    };
+
+    Object.entries(intTestCases).forEach(([input, output]) => {
+      expect(encoder.encode(BigInt(input))).toStrictEqual(Buffer.from(output));
+    });
   });
 });
