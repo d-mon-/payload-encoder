@@ -34,4 +34,5 @@ export const codes = {
   NUMBER_NEGATIVE_INFINITY: 41,
   STRING: 50,
   BOOLEAN: { TRUE: 60, FALSE: 61 },
+  BUFFER: 70,
 };

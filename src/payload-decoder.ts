@@ -109,6 +109,20 @@ export class Decoder {
     return code === codes.POSITIVE_BIGINT.N ? result : result * -1n;
   }
 
+  private _decodeBuffer(buffer: Buffer, offset = 1) {
+    const stringLengthCode = buffer.at(offset);
+    if (typeof stringLengthCode === "undefined")
+      throw new Error("Unexpected error");
+
+    const { data, offset: nextOffset } = this._decode32Int(
+      stringLengthCode,
+      buffer,
+      offset + 1
+    );
+
+    return buffer.subarray(nextOffset, nextOffset + data);
+  }
+
   decode(buffer: Buffer) {
     const code = buffer.at(0);
     if (typeof code === "undefined") throw new Error("Unexpected error");
@@ -157,6 +171,10 @@ export class Decoder {
       } else {
         return this._decodeBigInt(code, buffer).data;
       }
+    }
+
+    if (codes.BUFFER) {
+      return this._decodeBuffer(buffer);
     }
 
     throw new Error(`Couldn't decode value with code ${code}`);

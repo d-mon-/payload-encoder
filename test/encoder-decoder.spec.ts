@@ -121,4 +121,10 @@ describe("Encoder/Decoder", () => {
       expect(decoder.decode(encoder.encode(input))).toEqual(input);
     });
   });
+
+  test("buffer", () => {
+    expect(decoder.decode(encoder.encode(Buffer.from([1, 0])))).toStrictEqual(
+      Buffer.from([1, 0])
+    );
+  });
 });

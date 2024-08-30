@@ -189,4 +189,13 @@ describe("Encoder", () => {
       expect(encoder.encode(BigInt(input))).toStrictEqual(Buffer.from(output));
     });
   });
+
+  test("encode buffer", () => {
+    const stringCode = String.fromCharCode(codes.BUFFER);
+    const integerCode = String.fromCharCode(codes.POSITIVE_INT[1]);
+    const stringBufferSize = String.fromCharCode(2);
+    expect(encoder.encode(Buffer.from([49, 48]))).toStrictEqual(
+      Buffer.from(`${stringCode}${integerCode}${stringBufferSize}10`)
+    );
+  });
 });

@@ -127,6 +127,16 @@ export class Encoder {
     return Buffer.from([flag]);
   }
 
+  _encodeBuffer(value: Buffer) {
+    const length = value.length;
+    if (length > max32UInt) throw new Error("Text is exceeding max size");
+    return Buffer.concat([
+      Buffer.from([codes.BUFFER]),
+      this._encode32Int(length),
+      value,
+    ]);
+  }
+
   encode(value: unknown) {
     if (typeof value === "undefined") {
       return Buffer.from([codes.UNDEFINED]);
@@ -150,6 +160,9 @@ export class Encoder {
     }
     if (typeof value === "boolean") {
       return this._encodeBoolean(value);
+    }
+    if (value instanceof Buffer) {
+      return this._encodeBuffer(value);
     }
     throw new Error(`Unsupported value: ${value}`);
   }
