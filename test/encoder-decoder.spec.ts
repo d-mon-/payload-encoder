@@ -86,6 +86,9 @@ describe("Encoder/Decoder", () => {
     expect(
       decoder.decode(encoder.encode("my nickname is d-mon-"))
     ).toStrictEqual("my nickname is d-mon-");
+    expect(decoder.decode(encoder.encode("abc".repeat(500)))).toStrictEqual(
+      "abc".repeat(500)
+    );
   });
 
   test("boolean", () => {
@@ -126,5 +129,10 @@ describe("Encoder/Decoder", () => {
     expect(decoder.decode(encoder.encode(Buffer.from([1, 0])))).toStrictEqual(
       Buffer.from([1, 0])
     );
+  });
+
+  test("date", () => {
+    const date = new Date();
+    expect(decoder.decode(encoder.encode(date))).toStrictEqual(date);
   });
 });

@@ -1,33 +1,35 @@
-import { codes } from "./code";
+import { codes, IntCode, IntIndex, isInt, isPositiveInt } from "./code";
 import { endianness } from "os";
+import { lengthMaskTreshold } from "./payload-encoder";
 
 const endian = endianness();
 
 const float64Array = new Float64Array(1);
 const uInt8Float64Array = new Uint8Array(float64Array.buffer);
 
-const int_pows_caching = Array.from(Array(4), (_, i) => Math.pow(2, i * 8));
+const int_pows_caching = Array.from(Array(8), (_, i) => Math.pow(2, i * 8));
 const bigint_pows_caching = Array.from(
-  Array(7),
+  Array(8),
   (_, i) => 2n ** (BigInt(i) * 8n)
 );
 
 export class Decoder {
   constructor(private options?: { allowInfinity?: boolean }) {}
 
-  private _decode32Int(code: number, buffer: Buffer, offset = 1) {
+  private _decodeSafeInt(code: IntCode, buffer: Buffer, offset = 1) {
     // special case for negative zero
     if (code === codes.NEGATIVE_INT[0]) {
       return { data: -0, offset };
     }
 
-    const codeIsPositiveInt =
-      codes.POSITIVE_INT[0] <= code && code <= codes.POSITIVE_INT[4];
+    const codeIsPositiveInt = isPositiveInt(code);
 
     const sign = codeIsPositiveInt ? 1 : -1;
-    const bufferSize = codeIsPositiveInt
-      ? code - codes.POSITIVE_INT[0]
-      : code - codes.NEGATIVE_INT[0]; // return 4, 3, 2, 1 or 0
+    const bufferSize = (
+      codeIsPositiveInt
+        ? code - codes.POSITIVE_INT[0]
+        : code - codes.NEGATIVE_INT[0]
+    ) as IntIndex;
 
     let result = 0;
     for (let i = 0; i < bufferSize; i++) {
@@ -36,6 +38,20 @@ export class Decoder {
       result += output * int_pows_caching[bufferSize - 1 - i]!;
     }
     return { data: sign * result, offset: offset + bufferSize };
+  }
+
+  private _decodeLength(buffer: Buffer, offset = 1) {
+    const length = buffer.at(offset);
+    if (!length) throw new Error("length not found");
+    if (length < lengthMaskTreshold) {
+      return { data: length, offset: offset + 1 };
+    } else {
+      return this._decodeSafeInt(
+        codes.POSITIVE_INT[(length - lengthMaskTreshold) as IntIndex],
+        buffer,
+        offset + 1
+      );
+    }
   }
 
   private _decodeFloat(buffer: Buffer, offset = 1) {
@@ -47,42 +63,17 @@ export class Decoder {
   }
 
   private _decodeString(buffer: Buffer, offset = 1) {
-    const stringLengthCode = buffer.at(offset);
-    if (typeof stringLengthCode === "undefined")
-      throw new Error("Unexpected error");
-
-    const { data, offset: nextOffset } = this._decode32Int(
-      stringLengthCode,
-      buffer,
-      offset + 1
-    );
-
+    const { data, offset: nextOffset } = this._decodeLength(buffer, offset);
     return buffer.toString("utf-8", nextOffset, nextOffset + data);
   }
 
   private _decodeBigInt(code: number, buffer: Buffer, offset = 1) {
     const codeIsPositiveInt =
       codes.POSITIVE_BIGINT[0] <= code && code <= codes.POSITIVE_BIGINT[8];
-
     const sign = codeIsPositiveInt ? 1n : -1n;
-    let bufferSize: number;
-
-    switch (code) {
-      case codes.NEGATIVE_BIGINT[0]:
-      case codes.POSITIVE_BIGINT[0]:
-        bufferSize = 0;
-        break;
-      case codes.NEGATIVE_BIGINT[1]:
-      case codes.POSITIVE_BIGINT[1]:
-        bufferSize = 1;
-        break;
-      case codes.NEGATIVE_BIGINT[4]:
-      case codes.POSITIVE_BIGINT[4]:
-        bufferSize = 4;
-        break;
-      default:
-        bufferSize = 8;
-    }
+    const bufferSize = codeIsPositiveInt
+      ? code - codes.POSITIVE_BIGINT[0]
+      : code - codes.NEGATIVE_BIGINT[0]; // return 0 -> 8
 
     let result = 0n;
     for (let i = 0; i < bufferSize; i++) {
@@ -94,33 +85,23 @@ export class Decoder {
   }
 
   private _decodeBigIntN(code: number, buffer: Buffer, offset = 1) {
-    const bigIntLengthCode = buffer.at(offset);
-    if (typeof bigIntLengthCode === "undefined")
-      throw new Error("Unexpected error");
-
-    const { data, offset: nextOffset } = this._decode32Int(
-      bigIntLengthCode,
-      buffer,
-      offset + 1
-    );
-
+    const { data, offset: nextOffset } = this._decodeLength(buffer, offset);
     const value = buffer.toString("utf-8", nextOffset, nextOffset + data);
     const result = BigInt("0x" + value);
     return code === codes.POSITIVE_BIGINT.N ? result : result * -1n;
   }
 
   private _decodeBuffer(buffer: Buffer, offset = 1) {
-    const stringLengthCode = buffer.at(offset);
-    if (typeof stringLengthCode === "undefined")
-      throw new Error("Unexpected error");
-
-    const { data, offset: nextOffset } = this._decode32Int(
-      stringLengthCode,
-      buffer,
-      offset + 1
-    );
-
+    const { data, offset: nextOffset } = this._decodeLength(buffer, offset);
     return buffer.subarray(nextOffset, nextOffset + data);
+  }
+
+  private _decodeDate(buffer: Buffer, offset = 1) {
+    const timestampCode = buffer.at(offset);
+    if (!isInt(timestampCode)) throw new Error("Unexpected error");
+    return new Date(
+      this._decodeSafeInt(timestampCode, buffer, offset + 1).data
+    );
   }
 
   decode(buffer: Buffer) {
@@ -135,8 +116,8 @@ export class Decoder {
       return null;
     }
 
-    if (codes.POSITIVE_INT[0] <= code && code <= codes.NEGATIVE_INT[4]) {
-      return this._decode32Int(code, buffer).data;
+    if (isInt(code)) {
+      return this._decodeSafeInt(code, buffer).data;
     }
 
     if (code === codes.NUMBER_POSITIVE_INFINITY) {
@@ -173,8 +154,11 @@ export class Decoder {
       }
     }
 
-    if (codes.BUFFER) {
+    if (code === codes.BUFFER) {
       return this._decodeBuffer(buffer);
+    }
+    if (code === codes.DATE) {
+      return this._decodeDate(buffer);
     }
 
     throw new Error(`Couldn't decode value with code ${code}`);

@@ -10,14 +10,16 @@ const bigint64Array = new BigUint64Array(1);
 const uInt8BigInt64Array = new Uint8Array(bigint64Array.buffer);
 
 const max32UInt = 2 ** 32 - 1;
-const min32UInt = -max32UInt;
 const max64UInt = 2n ** 64n - 1n;
 const min64UInt = -max64UInt;
+
+// 248 was selected by substrating 255 by 6 to represent 1 byte -> 7 bytes
+export const lengthMaskTreshold = 248;
 
 export class Encoder {
   constructor(private options?: { allowInfinity?: boolean }) {}
 
-  private _encode32Int(value: number) {
+  private _encodeSafeInt(value: number) {
     // handle negative zero with a special code
     if (Object.is(value, -0)) {
       return Buffer.from([codes.NEGATIVE_INT[0]]);
@@ -25,16 +27,43 @@ export class Encoder {
 
     const intArray = [];
     const codeRange = value >= 0 ? codes.POSITIVE_INT : codes.NEGATIVE_INT;
-    const absValue = Math.abs(value);
+    let absValue = Math.abs(value);
 
+    // high
+    if (absValue >= 2 ** 32) {
+      const high = Math.floor(absValue / 2 ** 32);
+      absValue = absValue >>> 0;
+
+      for (let i = 24; i >= 0; i -= 8) {
+        const nextValue = high >> i;
+        if (nextValue || intArray.length) {
+          intArray.push(nextValue);
+        }
+      }
+    }
+
+    // low
     for (let i = 24; i >= 0; i -= 8) {
       const nextValue = absValue >> i;
       if (nextValue || intArray.length) {
         intArray.push(nextValue);
       }
     }
-    const code = codeRange[intArray.length as 0 | 1 | 2 | 3 | 4];
+    const code = codeRange[intArray.length as keyof typeof codeRange];
     return Buffer.from([code, ...intArray]);
+  }
+
+  // encode length
+  // if the length is smaller than lengthMaskTreshold, store the length as-is
+  // if the length is greater than lengthMaskTreshold, use lengthMaskTreshold as mask to store the bytes size
+  private _encodeLength(length: number) {
+    if (length < lengthMaskTreshold) {
+      return Buffer.from([length]);
+    } else {
+      const result = this._encodeSafeInt(length);
+      result[0]! = lengthMaskTreshold + (result.length - 1);
+      return result;
+    }
   }
 
   private _encodeBigInt64(value: bigint) {
@@ -46,25 +75,19 @@ export class Encoder {
     const absValue = isPositive ? value : value * -1n;
 
     bigint64Array[0] = absValue;
-    let bigIntArr =
+    const beBigIntArr =
       endian === "BE" ? uInt8BigInt64Array : [...uInt8BigInt64Array].reverse();
-    const nonZeroIdx = bigIntArr.findIndex((v) => v !== 0);
+    const firstNonZeroIdx = beBigIntArr.findIndex((v) => v !== 0);
 
-    let code: number;
-    if (nonZeroIdx === -1) {
-      code = codeRangeByte[0]; // 0 bit
-      bigIntArr = [];
-    } else if (nonZeroIdx < 4) {
-      code = codeRangeByte[8]; // 8 bytes
-    } else if (nonZeroIdx < 7) {
-      code = codeRangeByte[4];
-      bigIntArr = bigIntArr.slice(4, 8); // 4 bytes
-    } else {
-      code = codeRangeByte[1];
-      bigIntArr = bigIntArr.slice(7, 8); // 1 byte
-    }
+    const [code, result] =
+      firstNonZeroIdx === -1
+        ? [codeRangeByte[0], []]
+        : [
+            codeRangeByte[(8 - firstNonZeroIdx) as keyof typeof codeRangeByte],
+            beBigIntArr.slice(firstNonZeroIdx, 8),
+          ];
 
-    return Buffer.from([code, ...bigIntArr]);
+    return Buffer.from([code, ...result]);
   }
 
   private _encodeBigIntN(value: bigint) {
@@ -76,7 +99,7 @@ export class Encoder {
     if (length > max32UInt) throw new Error("BigInt is exceeding max bytesize");
     return Buffer.concat([
       Buffer.from([code]),
-      this._encode32Int(length),
+      this._encodeLength(length),
       bufferBigInt,
     ]);
   }
@@ -104,8 +127,12 @@ export class Encoder {
       return Buffer.from([codes.NUMBER_NEGATIVE_INFINITY]);
     }
 
-    if (Number.isInteger(value) && min32UInt <= value && value <= max32UInt) {
-      return this._encode32Int(value);
+    if (
+      Number.isInteger(value) &&
+      Number.MIN_SAFE_INTEGER <= value &&
+      value <= Number.MAX_SAFE_INTEGER
+    ) {
+      return this._encodeSafeInt(value);
     }
 
     return this._encodeFloat(value);
@@ -115,9 +142,10 @@ export class Encoder {
     const bufferString = Buffer.from(value, "utf-8");
     const length = bufferString.length;
     if (length > max32UInt) throw new Error("Text is exceeding max size");
+
     return Buffer.concat([
       Buffer.from([codes.STRING]),
-      this._encode32Int(length),
+      this._encodeLength(length),
       bufferString,
     ]);
   }
@@ -132,8 +160,15 @@ export class Encoder {
     if (length > max32UInt) throw new Error("Text is exceeding max size");
     return Buffer.concat([
       Buffer.from([codes.BUFFER]),
-      this._encode32Int(length),
+      this._encodeLength(length),
       value,
+    ]);
+  }
+
+  _encodeDate(value: Date) {
+    return Buffer.concat([
+      Buffer.from([codes.DATE]),
+      this._encodeSafeInt(value.getTime()),
     ]);
   }
 
@@ -164,6 +199,12 @@ export class Encoder {
     if (value instanceof Buffer) {
       return this._encodeBuffer(value);
     }
+    if (value instanceof Date && !isNaN(value.getTime())) {
+      return this._encodeDate(value);
+    }
+
+    // TODO encode array, object, error, NaN, Set, Map
+    // TODO custom class => add fromBuffer, toBuffer symbol (test with big decimal)
     throw new Error(`Unsupported value: ${value}`);
   }
 }
