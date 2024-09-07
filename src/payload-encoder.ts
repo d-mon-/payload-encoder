@@ -141,16 +141,18 @@ export class Encoder {
     return this._encodeFloat(value);
   }
 
-  _encodeString(value: string) {
+  _encodeString(value: string, opts?: { omitCode: boolean }) {
     const bufferString = Buffer.from(value, "utf-8");
     const length = bufferString.length;
     if (length > max32UInt) throw new Error("Text is exceeding max size");
 
-    return Buffer.concat([
-      Buffer.from([codes.STRING]),
-      this._encodeLength(length),
-      bufferString,
-    ]);
+    const arr: Buffer[] = [];
+    if (!opts?.omitCode) {
+      arr.push(Buffer.from([codes.STRING]));
+    }
+    arr.push(this._encodeLength(length), bufferString);
+
+    return Buffer.concat(arr);
   }
 
   _encodeBoolean(value: boolean) {
@@ -180,6 +182,19 @@ export class Encoder {
       Buffer.from([codes.ARRAY_START]),
       ...value.map((v) => this.encode(v)),
       Buffer.from([codes.ARRAY_END]),
+    ]);
+  }
+
+  _encodeObject(value: object) {
+    return Buffer.concat([
+      Buffer.from([codes.OBJECT_START]),
+      ...Object.entries(value).map(([key, value]) =>
+        Buffer.concat([
+          this._encodeString(key, { omitCode: true }),
+          this.encode(value),
+        ])
+      ),
+      Buffer.from([codes.OBJECT_END]),
     ]);
   }
 
@@ -216,9 +231,12 @@ export class Encoder {
     if (Array.isArray(value)) {
       return this._encodeArray(value);
     }
+    if (typeof value === "object") {
+      return this._encodeObject(value);
+    }
 
-    // TODO handle loop on arrays and objects
-    // TODO encode array, object, error, NaN, Set, Map
+    // TODO handle loop on arrays and objects (cache)
+    // TODO encode object, error, NaN, Set, Map
     // TODO custom class => add fromBuffer, toBuffer symbol (test with big decimal)
     throw new Error(`Unsupported value: ${value}`);
   }

@@ -276,4 +276,76 @@ describe("Encoder", () => {
 
     test.skip("loop", () => {});
   });
+
+  describe("object", () => {
+    test("single level", () => {
+      expect(encoder.encode({ a: 1, b: 2, 100: 100 })).toStrictEqual(
+        Buffer.from([
+          codes.OBJECT_START,
+          // 100
+          3,
+          "1".charCodeAt(0),
+          "0".charCodeAt(0),
+          "0".charCodeAt(0),
+          codes.POSITIVE_INT[1],
+          100,
+          // a
+          1,
+          "a".charCodeAt(0),
+          codes.POSITIVE_INT[1],
+          1,
+          // b
+          1,
+          "b".charCodeAt(0),
+          codes.POSITIVE_INT[1],
+          2,
+          codes.OBJECT_END,
+        ])
+      );
+    });
+
+    test("multi-level", () => {
+      expect(
+        encoder.encode({ a: 1, b: 2, c: { d: 3, e: 4 }, f: 5 })
+      ).toStrictEqual(
+        Buffer.from([
+          codes.OBJECT_START,
+          // a
+          1,
+          "a".charCodeAt(0),
+          codes.POSITIVE_INT[1],
+          1,
+          // b
+          1,
+          "b".charCodeAt(0),
+          codes.POSITIVE_INT[1],
+          2,
+          // c
+          1,
+          "c".charCodeAt(0),
+          codes.OBJECT_START,
+          // d
+          1,
+          "d".charCodeAt(0),
+          codes.POSITIVE_INT[1],
+          3,
+          // e
+          1,
+          "e".charCodeAt(0),
+          codes.POSITIVE_INT[1],
+          4,
+          codes.OBJECT_END,
+
+          // f
+          1,
+          "f".charCodeAt(0),
+          codes.POSITIVE_INT[1],
+          5,
+          codes.OBJECT_END,
+        ])
+      );
+    });
+
+    test.skip("loop", () => {});
+  });
 });

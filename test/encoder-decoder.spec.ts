@@ -154,4 +154,18 @@ describe("Encoder/Decoder", () => {
 
     expect(decoder.decode(encoder.encode(expected))).toStrictEqual(expected);
   });
+
+  test("object", () => {
+    const expected = {
+      a: 1,
+      ["b".repeat(500)]: 2,
+      10000: 10000,
+      e: {
+        f: [1n, 5n],
+      },
+      g: ["a", "b"],
+    };
+
+    expect(decoder.decode(encoder.encode(expected))).toStrictEqual(expected);
+  });
 });

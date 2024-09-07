@@ -126,6 +126,18 @@ export class Decoder {
     return { data: result, offset: offset + 1 };
   }
 
+  private _decodeObject(buffer: Buffer, offset: number) {
+    const result: { [key: string]: unknown } = {};
+
+    while (buffer.at(offset) !== codes.OBJECT_END) {
+      const decodedKey = this._decodeString(buffer, offset);
+      const decodedValue = this._decode(buffer, decodedKey.offset);
+      result[decodedKey.data] = decodedValue.data;
+      offset = decodedValue.offset;
+    }
+    return { data: result, offset: offset + 1 };
+  }
+
   _decode(buffer: Buffer, offset = 0): { data: unknown; offset: number } {
     const code = buffer.at(offset);
     offset = offset + 1;
@@ -189,6 +201,9 @@ export class Decoder {
     }
     if (code === codes.ARRAY_START) {
       return this._decodeArray(buffer, offset);
+    }
+    if (code === codes.OBJECT_START) {
+      return this._decodeObject(buffer, offset);
     }
 
     throw new Error(`Couldn't decode value with code ${code}`);
