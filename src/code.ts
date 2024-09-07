@@ -21,6 +21,7 @@ export const codes = {
     6: 26,
     7: 27, // 7 bytes
   },
+  INT_CACHE: 29,
   POSITIVE_BIGINT: {
     0: 30, // positive zero (0 byte)
     1: 31, // 1 byte
@@ -45,13 +46,26 @@ export const codes = {
     8: 48, // 8 byte
     N: 49, // N byte
   },
-  FLOAT: 50,
+  BIGINT_CACHE: 50,
+  FLOAT: 51,
+  FLOAT_CACHE: 52,
   NUMBER_POSITIVE_INFINITY: 60,
   NUMBER_NEGATIVE_INFINITY: 61,
   STRING: 70,
-  BOOLEAN: { TRUE: 80, FALSE: 81 },
+  STRING_CACHE: 71,
+  BOOLEAN_TRUE: 80,
+  BOOLEAN_FALSE: 81,
   BUFFER: 100,
-  DATE: 101,
+  BUFFER_CACHE: 101,
+  DATE: 102,
+  DATE_CACHE: 103,
+  ARRAY_START: 104,
+  ARRAY_END: 105,
+  ARRAY_CACHE: 106,
+  OBJECT_START: 107,
+  OBJECT_END: 108,
+  OBJECT_CACHE: 109,
+  CUSTOM: 255,
 } as const;
 
 export type IntIndex = keyof typeof codes.POSITIVE_INT;

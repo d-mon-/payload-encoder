@@ -17,6 +17,9 @@ const min64UInt = -max64UInt;
 export const lengthMaskTreshold = 248;
 
 export class Encoder {
+  referenceIdx = new WeakMap();
+  objectCount = 0;
+
   constructor(private options?: { allowInfinity?: boolean }) {}
 
   private _encodeSafeInt(value: number) {
@@ -32,7 +35,7 @@ export class Encoder {
     // high
     if (absValue >= 2 ** 32) {
       const high = Math.floor(absValue / 2 ** 32);
-      absValue = absValue >>> 0;
+      absValue = absValue >>> 0; // assign low
 
       for (let i = 24; i >= 0; i -= 8) {
         const nextValue = high >> i;
@@ -57,7 +60,7 @@ export class Encoder {
   // if the length is smaller than lengthMaskTreshold, store the length as-is
   // if the length is greater than lengthMaskTreshold, use lengthMaskTreshold as mask to store the bytes size
   private _encodeLength(length: number) {
-    if (length < lengthMaskTreshold) {
+    if (length <= lengthMaskTreshold) {
       return Buffer.from([length]);
     } else {
       const result = this._encodeSafeInt(length);
@@ -67,7 +70,7 @@ export class Encoder {
   }
 
   private _encodeBigInt64(value: bigint) {
-    // there ares no negative zero in bigint
+    // unlinke Number, there are no negative zero in bigint
     const isPositive = value >= 0n;
     const codeRangeByte = isPositive
       ? codes.POSITIVE_BIGINT
@@ -151,7 +154,7 @@ export class Encoder {
   }
 
   _encodeBoolean(value: boolean) {
-    const flag = value === true ? codes.BOOLEAN.TRUE : codes.BOOLEAN.FALSE;
+    const flag = value === true ? codes.BOOLEAN_TRUE : codes.BOOLEAN_FALSE;
     return Buffer.from([flag]);
   }
 
@@ -172,7 +175,15 @@ export class Encoder {
     ]);
   }
 
-  encode(value: unknown) {
+  _encodeArray(value: unknown[]) {
+    return Buffer.concat([
+      Buffer.from([codes.ARRAY_START]),
+      ...value.map((v) => this.encode(v)),
+      Buffer.from([codes.ARRAY_END]),
+    ]);
+  }
+
+  encode(value: unknown): Buffer {
     if (typeof value === "undefined") {
       return Buffer.from([codes.UNDEFINED]);
     }
@@ -202,7 +213,11 @@ export class Encoder {
     if (value instanceof Date && !isNaN(value.getTime())) {
       return this._encodeDate(value);
     }
+    if (Array.isArray(value)) {
+      return this._encodeArray(value);
+    }
 
+    // TODO handle loop on arrays and objects
     // TODO encode array, object, error, NaN, Set, Map
     // TODO custom class => add fromBuffer, toBuffer symbol (test with big decimal)
     throw new Error(`Unsupported value: ${value}`);

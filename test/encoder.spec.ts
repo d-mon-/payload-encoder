@@ -238,4 +238,42 @@ describe("Encoder", () => {
       Buffer.from([codes.DATE, codes.POSITIVE_INT[6], 1, 140, 194, 81, 244, 0])
     );
   });
+
+  describe("array", () => {
+    test("single level", () => {
+      expect(encoder.encode([1, 2, 3])).toStrictEqual(
+        Buffer.from([
+          codes.ARRAY_START,
+          codes.POSITIVE_INT[1],
+          1,
+          codes.POSITIVE_INT[1],
+          2,
+          codes.POSITIVE_INT[1],
+          3,
+          codes.ARRAY_END,
+        ])
+      );
+    });
+
+    test("multi-level", () => {
+      expect(encoder.encode([1, [2, 3], 4])).toStrictEqual(
+        Buffer.from([
+          codes.ARRAY_START,
+          codes.POSITIVE_INT[1],
+          1,
+          codes.ARRAY_START,
+          codes.POSITIVE_INT[1],
+          2,
+          codes.POSITIVE_INT[1],
+          3,
+          codes.ARRAY_END,
+          codes.POSITIVE_INT[1],
+          4,
+          codes.ARRAY_END,
+        ])
+      );
+    });
+
+    test.skip("loop", () => {});
+  });
 });

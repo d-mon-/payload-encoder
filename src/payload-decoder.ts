@@ -16,10 +16,10 @@ const bigint_pows_caching = Array.from(
 export class Decoder {
   constructor(private options?: { allowInfinity?: boolean }) {}
 
-  private _decodeSafeInt(code: IntCode, buffer: Buffer, offset = 1) {
+  private _decodeSafeInt(code: IntCode, buffer: Buffer, offset: number) {
     // special case for negative zero
     if (code === codes.NEGATIVE_INT[0]) {
-      return { data: -0, offset };
+      return { data: -0, offset: offset + 1 };
     }
 
     const codeIsPositiveInt = isPositiveInt(code);
@@ -40,10 +40,10 @@ export class Decoder {
     return { data: sign * result, offset: offset + bufferSize };
   }
 
-  private _decodeLength(buffer: Buffer, offset = 1) {
+  private _decodeLength(buffer: Buffer, offset: number) {
     const length = buffer.at(offset);
     if (!length) throw new Error("length not found");
-    if (length < lengthMaskTreshold) {
+    if (length <= lengthMaskTreshold) {
       return { data: length, offset: offset + 1 };
     } else {
       return this._decodeSafeInt(
@@ -54,20 +54,23 @@ export class Decoder {
     }
   }
 
-  private _decodeFloat(buffer: Buffer, offset = 1) {
+  private _decodeFloat(buffer: Buffer, offset: number) {
     for (let i = 0; i <= 7; i++) {
       uInt8Float64Array[i] =
         buffer[endian === "BE" ? i + offset : 7 + offset - i]!;
     }
-    return float64Array[0];
+    return { data: float64Array[0], offset: offset + 8 };
   }
 
-  private _decodeString(buffer: Buffer, offset = 1) {
+  private _decodeString(buffer: Buffer, offset: number) {
     const { data, offset: nextOffset } = this._decodeLength(buffer, offset);
-    return buffer.toString("utf-8", nextOffset, nextOffset + data);
+    return {
+      data: buffer.toString("utf-8", nextOffset, nextOffset + data),
+      offset: nextOffset + data,
+    };
   }
 
-  private _decodeBigInt(code: number, buffer: Buffer, offset = 1) {
+  private _decodeBigInt(code: number, buffer: Buffer, offset: number) {
     const codeIsPositiveInt =
       codes.POSITIVE_BIGINT[0] <= code && code <= codes.POSITIVE_BIGINT[8];
     const sign = codeIsPositiveInt ? 1n : -1n;
@@ -84,83 +87,114 @@ export class Decoder {
     return { data: sign * result, offset: offset + bufferSize };
   }
 
-  private _decodeBigIntN(code: number, buffer: Buffer, offset = 1) {
+  private _decodeBigIntN(code: number, buffer: Buffer, offset: number) {
     const { data, offset: nextOffset } = this._decodeLength(buffer, offset);
     const value = buffer.toString("utf-8", nextOffset, nextOffset + data);
     const result = BigInt("0x" + value);
-    return code === codes.POSITIVE_BIGINT.N ? result : result * -1n;
+    return {
+      data: code === codes.POSITIVE_BIGINT.N ? result : result * -1n,
+      offset: nextOffset + data,
+    };
   }
 
-  private _decodeBuffer(buffer: Buffer, offset = 1) {
+  private _decodeBuffer(buffer: Buffer, offset: number) {
     const { data, offset: nextOffset } = this._decodeLength(buffer, offset);
-    return buffer.subarray(nextOffset, nextOffset + data);
+    return {
+      data: buffer.subarray(nextOffset, nextOffset + data),
+      offset: nextOffset + data,
+    };
   }
 
-  private _decodeDate(buffer: Buffer, offset = 1) {
+  private _decodeDate(buffer: Buffer, offset: number) {
     const timestampCode = buffer.at(offset);
     if (!isInt(timestampCode)) throw new Error("Unexpected error");
-    return new Date(
-      this._decodeSafeInt(timestampCode, buffer, offset + 1).data
+    const { data, offset: nextOffset } = this._decodeSafeInt(
+      timestampCode,
+      buffer,
+      offset + 1
     );
+    return { data: new Date(data), offset: nextOffset };
   }
 
-  decode(buffer: Buffer) {
-    const code = buffer.at(0);
+  private _decodeArray(buffer: Buffer, offset: number) {
+    const result = [];
+    while (buffer.at(offset) !== codes.ARRAY_END) {
+      const decodedValue = this._decode(buffer, offset);
+      result.push(decodedValue.data);
+      offset = decodedValue.offset;
+    }
+    return { data: result, offset: offset + 1 };
+  }
+
+  _decode(buffer: Buffer, offset = 0): { data: unknown; offset: number } {
+    const code = buffer.at(offset);
+    offset = offset + 1;
     if (typeof code === "undefined") throw new Error("Unexpected error");
 
     if (code === codes.UNDEFINED) {
-      return undefined;
+      return { data: undefined, offset };
     }
 
     if (code === codes.NULL) {
-      return null;
+      return { data: null, offset };
     }
 
     if (isInt(code)) {
-      return this._decodeSafeInt(code, buffer).data;
+      return this._decodeSafeInt(code, buffer, offset);
     }
 
     if (code === codes.NUMBER_POSITIVE_INFINITY) {
       if (!this.options?.allowInfinity)
         throw new Error(`Couldn't decode value: POSITIVE_INFINITY`);
-      return Number.POSITIVE_INFINITY;
+      return { data: Number.POSITIVE_INFINITY, offset };
     }
 
     if (code === codes.NUMBER_NEGATIVE_INFINITY) {
       if (!this.options?.allowInfinity)
         throw new Error(`Couldn't decode value: NEGATIVE_INFINITY`);
-      return Number.NEGATIVE_INFINITY;
+      return { data: Number.NEGATIVE_INFINITY, offset };
     }
 
     if (code === codes.FLOAT) {
-      return this._decodeFloat(buffer);
+      return this._decodeFloat(buffer, offset);
     }
 
     if (code === codes.STRING) {
-      return this._decodeString(buffer);
+      return this._decodeString(buffer, offset);
     }
 
-    if (code === codes.BOOLEAN.FALSE) return false;
-    if (code === codes.BOOLEAN.TRUE) return true;
+    if (code === codes.BOOLEAN_FALSE) {
+      return { data: false, offset };
+    }
+    if (code === codes.BOOLEAN_TRUE) {
+      return { data: true, offset };
+    }
 
     if (codes.POSITIVE_BIGINT[0] <= code && code <= codes.NEGATIVE_BIGINT.N) {
       if (
         code === codes.POSITIVE_BIGINT.N ||
         code === codes.NEGATIVE_BIGINT.N
       ) {
-        return this._decodeBigIntN(code, buffer);
+        return this._decodeBigIntN(code, buffer, offset);
       } else {
-        return this._decodeBigInt(code, buffer).data;
+        return this._decodeBigInt(code, buffer, offset);
       }
     }
 
     if (code === codes.BUFFER) {
-      return this._decodeBuffer(buffer);
+      return this._decodeBuffer(buffer, offset);
     }
     if (code === codes.DATE) {
-      return this._decodeDate(buffer);
+      return this._decodeDate(buffer, offset);
+    }
+    if (code === codes.ARRAY_START) {
+      return this._decodeArray(buffer, offset);
     }
 
     throw new Error(`Couldn't decode value with code ${code}`);
+  }
+
+  decode(buffer: Buffer) {
+    return this._decode(buffer).data;
   }
 }

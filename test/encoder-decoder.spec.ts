@@ -33,6 +33,7 @@ describe("Encoder/Decoder", () => {
       -1,
       -255,
       -256,
+      -12345,
       -Math.pow(2, 16) + 1,
       -Math.pow(2, 16),
       -Math.pow(2, 24) + 1,
@@ -134,5 +135,23 @@ describe("Encoder/Decoder", () => {
   test("date", () => {
     const date = new Date();
     expect(decoder.decode(encoder.encode(date))).toStrictEqual(date);
+  });
+
+  test("array", () => {
+    const expected = [
+      -12345,
+      12345,
+      "abcdef",
+      12345n,
+      -12345n,
+      1.2345,
+      -1.2345,
+      new Date(),
+      Buffer.from([1, 2, 3, 4, 5]),
+      [12345, 67890, "abc", [12345]],
+      12345,
+    ];
+
+    expect(decoder.decode(encoder.encode(expected))).toStrictEqual(expected);
   });
 });
